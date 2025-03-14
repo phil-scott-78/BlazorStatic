@@ -215,7 +215,8 @@ dotnet_diagnostic.ca1857.severity = warning
 dotnet_diagnostic.ca1858.severity = warning
 
 # CA2007: Consider calling ConfigureAwait on the awaited task
-dotnet_diagnostic.ca2007.severity = warning
+# Ignore, there isn’t a SynchronizationContext in ASP.NET Core.
+dotnet_diagnostic.ca2007.severity = none
 
 # CA2008: Do not create tasks without passing a TaskScheduler
 dotnet_diagnostic.ca2008.severity = warning
