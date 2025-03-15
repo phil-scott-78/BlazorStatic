@@ -1,5 +1,4 @@
 using System.Collections.Immutable;
-using System.Reflection;
 
 namespace BlazorStatic.Services;
 
@@ -37,8 +36,11 @@ public class BlazorStaticContentService<TFrontMatter> where TFrontMatter : class
         _blazorStaticService = blazorStaticService;
         _logger = logger;
 
-        blazorStaticFileWatcher.Initialize([options.ContentPath], NeedsRefresh);
-        HotReloadManager.Subscribe(NeedsRefresh);
+        if(_blazorStaticService.Options.HotReloadEnabled)
+        {
+            blazorStaticFileWatcher.Initialize([options.ContentPath], NeedsRefresh);
+            HotReloadManager.Subscribe(NeedsRefresh);
+        }
     }
 
     private void NeedsRefresh()
@@ -166,11 +168,6 @@ public class BlazorStaticContentService<TFrontMatter> where TFrontMatter : class
                 RecurseSubdirectories = true
             };
 
-            var execFolder = Directory
-                .GetParent((Assembly.GetEntryAssembly() ?? Assembly.GetCallingAssembly()).Location)
-                !.FullName;//! is ok, null only in empty path or rootrrr
-
-            var contentPath = Path.Combine(execFolder, _options.ContentPath);
             return (Directory.GetFiles(_options.ContentPath, _options.PostFilePattern, enumerationOptions), _options.ContentPath);
         }
 

@@ -26,6 +26,35 @@ public class BlazorStaticService(
     /// </summary>
     public BlazorStaticOptions Options => options;
 
+
+    /// <summary>
+    ///     Adds a page to the list of pages that will be generated as static HTML.
+    ///     This method appends the provided page to the internal immutable collection
+    ///     of pages that will be processed during the static generation phase.
+    /// </summary>
+    /// <param name="pageToGenerate">
+    ///     The page configuration containing the URL to fetch and the output file path
+    ///     where the static content will be saved.
+    /// </param>
+    public void AddPageToGenerate(PageToGenerate pageToGenerate)
+    {
+        _pagesToGenerate = _pagesToGenerate.Add(pageToGenerate);
+    }
+
+    /// <summary>
+    ///     Adds content to be copied to the output directory during the static generation process.
+    ///     This method appends the provided content to the internal immutable collection
+    ///     of content items that will be copied when the static site is generated.
+    /// </summary>
+    /// <param name="content">
+    ///     The content configuration containing the source path of the content to copy
+    ///     and the target path where it should be placed in the output directory.
+    /// </param>
+    public void AddContentToCopyToOutput(ContentToCopy content)
+    {
+        _contentToCopy = _contentToCopy.Add(content);
+    }
+
     /// <summary>
     ///     Generates static pages for the Blazor application. This method performs several key operations:
     ///     - Invokes an optional pre-defined content action.
@@ -70,8 +99,7 @@ public class BlazorStaticService(
         var ignoredPathsWithOutputFolder = options.IgnoredPathsOnContentCopy.Select(x => Path.Combine(options.OutputFolderPath, x)).ToList();
         foreach(var pathToCopy in _contentToCopy)
         {
-            logger.LogInformation("Copying {sourcePath} to {targetPath}", pathToCopy.SourcePath,
-            Path.Combine(options.OutputFolderPath, pathToCopy.TargetPath));
+            logger.LogInformation("Copying {sourcePath} to {targetPath}", pathToCopy.SourcePath, Path.Combine(options.OutputFolderPath, pathToCopy.TargetPath));
 
             helpers.CopyContent(pathToCopy.SourcePath, Path.Combine(options.OutputFolderPath, pathToCopy.TargetPath),
             ignoredPathsWithOutputFolder);
@@ -171,20 +199,5 @@ public class BlazorStaticService(
         {
             AddPageToGenerate(new PageToGenerate(route, Path.Combine(route, options.IndexPageHtml)));
         }
-    }
-
-    public void AddPageToGenerate(PageToGenerate pageToGenerate)
-    {
-        _pagesToGenerate = _pagesToGenerate.Add(pageToGenerate);
-    }
-
-    public void AddContentToCopyToOutput(ContentToCopy content)
-    {
-        _contentToCopy = _contentToCopy.Add(content);
-    }
-
-    public IEnumerable<ContentToCopy> GetContentToCopy()
-    {
-        return _contentToCopy;
     }
 }

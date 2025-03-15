@@ -3,12 +3,6 @@
 namespace BlazorStatic;
 
 /// <summary>
-/// For blog front matter that has Tags
-/// </summary>
-
-
-
-/// <summary>
 ///     Showcase of a IFrontMatter implementation. If you have a different front matter format, implement your own class.
 /// </summary>
 public class BlogFrontMatter : IFrontMatter, IFrontMatterWithTags

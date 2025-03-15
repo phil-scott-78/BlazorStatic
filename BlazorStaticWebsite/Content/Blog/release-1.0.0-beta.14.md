@@ -11,7 +11,7 @@ authors:
     gitHubUserName: "patricktcoakley"
 ---
 
-## Changes and Breaking Changes. 
+## Changes and Breaking Changes.
 
 - In `BlazorStaticContentOptions`, tag-related options have been moved to a new class, `TagsOptions`:
 

@@ -1,10 +1,15 @@
 ﻿namespace BlazorStatic.Services;
 
+/// <summary>
+/// Watches specified directories for file system changes and triggers update actions.
+/// This class monitors file creation, deletion, modification, and renaming events
+/// in the specified directories and their subdirectories.
+/// </summary>
 public class BlazorStaticFileWatcher : IDisposable
 {
     private readonly Dictionary<string, FileSystemWatcher> _watchers = new();
 
-    private readonly List<Action> _updates = new();
+    private readonly List<Action> _updates = [];
 
     internal void Initialize(IEnumerable<string> contentToCopyList, Action onUpdate)
     {
@@ -62,6 +67,7 @@ public class BlazorStaticFileWatcher : IDisposable
             update.Invoke();
         }    }
 
+    /// <inheritdoc />
     public void Dispose()
     {
         foreach (var watcher in _watchers.Values)

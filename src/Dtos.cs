@@ -6,7 +6,7 @@
 /// </summary>
 public interface IFrontMatter
 {
-        /// <summary>
+    /// <summary>
     ///     If true, the blog post will not be generated.
     /// </summary>
     bool IsDraft => false;
@@ -17,7 +17,6 @@ public interface IFrontMatter
     ///     (generation process isn't aware of IFrontMatter implementation)
     /// </summary>
     AdditionalInfo? AdditionalInfo => null;
-
 }
 
 /// <summary>

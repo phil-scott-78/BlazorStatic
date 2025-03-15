@@ -1,12 +1,10 @@
-﻿using System.Collections.Immutable;
-using Markdig;
+﻿using Markdig;
+using BlazorStatic.Services;
+using System.Net;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 
 namespace BlazorStatic;
-
-using System.Net;
-using Services;
 
 /// <summary>
 ///     Options for configuring the BlazorStatic generation process.
@@ -93,18 +91,7 @@ public class BlazorStaticOptions
 
 
     /// <summary>
-    ///     Hooks up to the hot reload event to re-generate the outputted pages. It also re-evaluates the options set up in
-    ///     Program.cs.
-    ///     <para>Works with:</para>
-    ///     - Changes in Razor files, C# code, CSS, etc.
-    ///     - Changes to .md files, if you set up the watch for them in .csproj, for example:
-    ///     <para>&#160;</para>
-    ///     &lt;ItemGroup&gt;
-    ///     &lt;Watch Include="Content/**/*" /&gt;
-    ///     &lt;/ItemGroup&gt;
-    ///     <para>&#160;</para>
-    ///     Note: Hot reload re-generation will clear the list of PagesToGenerate and ContentToCopyToOutput,
-    ///     but these lists will be re-populated through the options.
+    ///     Enables watching for file changes and hot-reloading the Blazor app.
     /// </summary>
     public bool HotReloadEnabled { get; set; }
 

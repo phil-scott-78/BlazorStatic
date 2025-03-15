@@ -21,14 +21,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="Content/**/*">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-    </None>
-  </ItemGroup>
-
-  <ItemGroup>
     <Watch Include="Content/**/*"/>
   </ItemGroup>
-
-
 </Project>
