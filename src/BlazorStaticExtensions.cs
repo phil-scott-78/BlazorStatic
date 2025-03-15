@@ -15,15 +15,14 @@ public static class BlazorStaticExtensions
     private static readonly Dictionary<Type, Action> s_actionsToConfigureOptions = new();
 
     private static WebApplication? s_app;
+
     /// <summary>
     ///     holds the actions that will run when UseBlazorStaticGenerator is called.
     ///     Will manage content for every BlazorStaticContentService added.
     ///     This makes sure the BlazorStaticService has some connection to BlazorStaticContentService
     ///     We use dictionary for type, because it removes the need for hassling with duplicate (in case of hot reload)
     /// </summary>
-    private static Dictionary<Type, Action<WebApplication>> staticContentUse { get; } = [];
-
-
+    private static Dictionary<Type, Action<WebApplication>> StaticContentUse { get; } = [];
 
     /// <summary>
     ///     Adds a BlazorStaticContentService to the specified IServiceCollection. The BlazorStaticContentService service uses
@@ -42,7 +41,6 @@ public static class BlazorStaticExtensions
     ///     BlazorStaticContentService`TFrontMatter` in the service collection.
     /// </remarks>
 
-
     public static IServiceCollection AddBlazorStaticContentService<TFrontMatter>(this IServiceCollection services,
         Action<BlazorStaticContentOptions<TFrontMatter>>? configureOptions = null)
         where TFrontMatter : class, IFrontMatter, new()
@@ -53,7 +51,7 @@ public static class BlazorStaticExtensions
         services.AddSingleton(options);
         services.AddSingleton<BlazorStaticContentService<TFrontMatter>>();
 
-        staticContentUse[typeof(TFrontMatter)] = UseBlazorStaticContent<TFrontMatter>;
+        StaticContentUse[typeof(TFrontMatter)] = UseBlazorStaticContent<TFrontMatter>;
         s_actionsToConfigureOptions[typeof(TFrontMatter)] = ConfigureOptions;
         return services;
 
@@ -63,14 +61,6 @@ public static class BlazorStaticExtensions
             options.CheckOptions();
         }
     }
-
-
-
-
-
-
-
-
 
     /// <summary>
     ///     Adds the Blazor static generation service to the specified IServiceCollection.
@@ -94,11 +84,11 @@ public static class BlazorStaticExtensions
 
         services.AddSingleton(options);
         services.AddSingleton<BlazorStaticService>();
+        services.AddSingleton<BlazorStaticFileWatcher>();
         s_actionsToConfigureOptions[typeof(BlazorStaticService)] = () => configureOptions?.Invoke(options);
 
         return services;
     }
-
 
     /// <summary>
     ///     Runs the actions necessary to generating static content by settings defined in options
@@ -109,10 +99,7 @@ public static class BlazorStaticExtensions
     private static void UseBlazorStaticContent<TFrontMatter>(WebApplication app)
         where TFrontMatter : class, IFrontMatter, new()
     {
-        var contentService = app.Services.GetRequiredService<BlazorStaticContentService<TFrontMatter>>();
-        contentService.Posts.Clear();//need to do it here in case of hot reload event
         var options = app.Services.GetRequiredService<BlazorStaticContentOptions<TFrontMatter>>();
-        var blazorStaticService = app.Services.GetRequiredService<BlazorStaticService>();
 
 
         //Add static files for media files to be accessible while running the app
@@ -141,31 +128,6 @@ public static class BlazorStaticExtensions
                 });
             }
         }
-        //
-
-        blazorStaticService.Options.AddBeforeFilesGenerationAction(contentService.ParseAndAddPosts);//will run later in GenerateStaticPages
-    }
-
-    internal static void UseBlazorStaticGeneratorOnHotReload()
-    {
-        if(s_app == null)
-        {
-            return;
-        }
-
-        var blazorStaticService = s_app.Services.GetRequiredService<BlazorStaticService>();
-        //basic clean up
-        blazorStaticService.Options.ClearBeforeFilesGenerationActions();
-        blazorStaticService.Options.PagesToGenerate.Clear();
-        blazorStaticService.Options.ContentToCopyToOutput.Clear();
-
-        //go through the options (from Program.cs)
-        foreach(var action in s_actionsToConfigureOptions)
-        {
-            action.Value.Invoke();
-        }
-
-        s_app.UseBlazorStaticGenerator();
     }
 
     /// <summary>
@@ -175,7 +137,7 @@ public static class BlazorStaticExtensions
     /// <param name="shutdownApp"></param>
     public static void UseBlazorStaticGenerator(this WebApplication app, bool shutdownApp = false)
     {
-        foreach(var use in staticContentUse)
+        foreach(var use in StaticContentUse)
         {
             use.Value.Invoke(app);
         }
@@ -186,8 +148,6 @@ public static class BlazorStaticExtensions
             s_app = app;
         }
 
-        HotReloadManager.HotReloadEnabled = blazorStaticService.Options.HotReloadEnabled;
-
         //adds wwwroot files (or any other files that has been added as static content) to the output
         AddStaticWebAssetsToOutput(app.Environment.WebRootFileProvider, string.Empty, blazorStaticService);
 
@@ -195,22 +155,23 @@ public static class BlazorStaticExtensions
 
         var logger = app.Services.GetRequiredService<ILogger<BlazorStaticService>>();
 
+
         lifetime.ApplicationStarted.Register(
-        // ReSharper disable once AsyncVoidLambda
-        async () => {
-            try
-            {
-                await blazorStaticService.GenerateStaticPages(app.Urls.First()).ConfigureAwait(false);
-                if(shutdownApp)
+            // ReSharper disable once AsyncVoidLambda
+            async () => {
+                try
                 {
-                    lifetime.StopApplication();
+                    await blazorStaticService.GenerateStaticPages(app.Urls.First()).ConfigureAwait(false);
+                    if(shutdownApp)
+                    {
+                        lifetime.StopApplication();
+                    }
+                }
+                catch(Exception ex)
+                {
+                    logger.LogError(ex, "An error occurred while generating static pages: {ErrorMessage}", ex.Message);
                 }
             }
-            catch(Exception ex)
-            {
-                logger.LogError(ex, "An error occurred while generating static pages: {ErrorMessage}", ex.Message);
-            }
-        }
         );
     }
 
@@ -235,7 +196,8 @@ public static class BlazorStaticExtensions
             {
                 if(item.PhysicalPath is not null)
                 {
-                    blazorStaticService.Options.ContentToCopyToOutput.Add(new ContentToCopy(item.PhysicalPath, fullPath));
+                    blazorStaticService.AddContentToCopyToOutput(new ContentToCopy(item.PhysicalPath, fullPath));
+                    // blazorStaticService.Options.ContentToCopyToOutput.Add(new ContentToCopy(item.PhysicalPath, fullPath));
                 }
             }
         }

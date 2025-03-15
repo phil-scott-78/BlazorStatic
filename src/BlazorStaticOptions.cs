@@ -1,4 +1,5 @@
-﻿using Markdig;
+﻿using System.Collections.Immutable;
+using Markdig;
 using YamlDotNet.Serialization;
 using YamlDotNet.Serialization.NamingConventions;
 

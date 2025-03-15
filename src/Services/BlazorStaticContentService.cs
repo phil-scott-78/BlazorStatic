@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using System.Reflection;
 
 namespace BlazorStatic.Services;
@@ -10,73 +11,154 @@ using Microsoft.Extensions.Logging;
 ///     that is used later by BlazorStaticService to generate static pages.
 /// </summary>
 /// /// <typeparam name="TFrontMatter"></typeparam>
-public class BlazorStaticContentService<TFrontMatter>(
-    BlazorStaticContentOptions<TFrontMatter> options,
-    BlazorStaticHelpers helpers,
-    BlazorStaticService blazorStaticService,
-    ILogger<BlazorStaticContentService<TFrontMatter>> logger)
-    where TFrontMatter : class, IFrontMatter, new()
+public class BlazorStaticContentService<TFrontMatter> where TFrontMatter : class, IFrontMatter, new()
 {
+    private bool _needsRefresh = true;
+    private ImmutableList<Post<TFrontMatter>> _posts = ImmutableList<Post<TFrontMatter>>.Empty;
+    private readonly BlazorStaticContentOptions<TFrontMatter> _options;
+    private readonly BlazorStaticHelpers _helpers;
+    private readonly BlazorStaticService _blazorStaticService;
+    private readonly ILogger<BlazorStaticContentService<TFrontMatter>> _logger;
+
+    /// <summary>
+    ///     The BlazorStaticContentService is responsible for parsing and adding blog posts.
+    ///     It adds pages with blog posts to the options.PagesToGenerate list,
+    ///     that is used later by BlazorStaticService to generate static pages.
+    /// </summary>
+    /// /// <typeparam name="TFrontMatter"></typeparam>
+    public BlazorStaticContentService(BlazorStaticContentOptions<TFrontMatter> options,
+        BlazorStaticHelpers helpers,
+        BlazorStaticService blazorStaticService,
+        BlazorStaticFileWatcher blazorStaticFileWatcher,
+        ILogger<BlazorStaticContentService<TFrontMatter>> logger)
+    {
+        _options = options;
+        _helpers = helpers;
+        _blazorStaticService = blazorStaticService;
+        _logger = logger;
+
+        blazorStaticFileWatcher.Initialize([options.ContentPath], NeedsRefresh);
+        HotReloadManager.Subscribe(NeedsRefresh);
+    }
+
+    private void NeedsRefresh()
+    {
+        lock(_posts)
+        {
+            _needsRefresh = true;
+        }
+    }
+
+
     /// <summary>
     /// Place where processed blog posts live (their HTML and front matter).
     /// </summary>
-    public List<Post<TFrontMatter>> Posts { get; } = [];
+    public ImmutableList<Post<TFrontMatter>> Posts
+    {
+        get
+        {
+            lock(_posts)
+            {
+                if(!_needsRefresh)
+                {
+                    return _posts;
+                }
+
+                ParseAndAddPosts();
+                _needsRefresh = false;
+                return _posts;
+            }
+        }
+    }
 
     /// <summary>
     ///     The BlazorStaticContentOptions used to configure the BlazorStaticContentService.
     /// </summary>
-    public BlazorStaticContentOptions<TFrontMatter> Options => options;
+    public BlazorStaticContentOptions<TFrontMatter> Options => _options;
 
     /// <summary>
     ///     Parses and adds posts to the BlazorStaticContentService. This method reads markdown files
     ///     from a specified directory, parses them to extract front matter and content,
     ///     and then adds them as posts to the options.PagesToGenerate.
     /// </summary>
-    public async Task ParseAndAddPosts()
+    public void ParseAndAddPosts()
     {
-        string absContentPath;//gets initialized in GetPostsPath
-        var files = GetPostsPath();
+        _posts = _posts.Clear();
+        var (files, absPostPAth) = GetPostsPath();
 
         (string, string)? mediaPaths =
-            options.MediaFolderRelativeToContentPath == null || options.MediaRequestPath == null
+            _options.MediaFolderRelativeToContentPath == null || _options.MediaRequestPath == null
                 ? null
-                : (options.MediaFolderRelativeToContentPath, options.MediaRequestPath);
+                : (_options.MediaFolderRelativeToContentPath, _options.MediaRequestPath);
 
         foreach(var file in files)
         {
-            var (htmlContent, frontMatter) = await helpers.ParseMarkdownFile<TFrontMatter>(file, mediaPaths);
+            var (htmlContent, frontMatter) = _helpers.ParseMarkdownFile<TFrontMatter>(file, mediaPaths);
 
             if(frontMatter.IsDraft)
             {
                 continue;
             }
+
             Post<TFrontMatter> post = new()
             {
                 FrontMatter = frontMatter,
-                Url = GetRelativePathWithFilename(file),
+                Url = GetRelativePathWithFilename(file, absPostPAth),
                 HtmlContent = htmlContent
             };
 
-            Posts.Add(post);
+            _posts = _posts.Add(post);
 
-            blazorStaticService.Options.PagesToGenerate.Add(new PageToGenerate($"{options.PageUrl}/{post.Url}",
-            Path.Combine(options.PageUrl, $"{post.Url}.html"), post.FrontMatter.AdditionalInfo));
+            _blazorStaticService.AddPageToGenerate(new PageToGenerate($"{_options.PageUrl}/{post.Url}",
+                Path.Combine(_options.PageUrl, $"{post.Url}.html"), post.FrontMatter.AdditionalInfo));
         }
 
         //copy media folder to output
-        if(options.MediaFolderRelativeToContentPath != null)
+        if(_options.MediaFolderRelativeToContentPath != null)
         {
-            var pathWithMedia = Path.Combine(options.ContentPath, options.MediaFolderRelativeToContentPath);
-            blazorStaticService.Options.ContentToCopyToOutput.Add(new ContentToCopy(pathWithMedia, pathWithMedia));
+            var pathWithMedia = Path.Combine(_options.ContentPath, _options.MediaFolderRelativeToContentPath);
+            _blazorStaticService.AddContentToCopyToOutput(new ContentToCopy(pathWithMedia, pathWithMedia));
         }
 
-        ProcessTags();
+        if(!typeof(IFrontMatterWithTags).IsAssignableFrom(typeof(TFrontMatter)))
+        {
+            if(_options.Tags.AddTagPagesFromPosts)
+                _logger.LogWarning(
+                    "BlazorStaticContentOptions.Tags.AddTagPagesFromPosts is true, but the used FrontMatter does not inherit from IFrontMatterWithTags. No tags were processed.");
+            return;
+        }
 
-        options.AfterContentParsedAndAddedAction?.Invoke(blazorStaticService,this);
+        //gather List<string> tags and create Tag objects from them.
+        AllTags = _posts
+            .SelectMany(post => (post.FrontMatter as IFrontMatterWithTags)?.Tags ?? Enumerable.Empty<string>())
+            .Distinct()
+            .Select(tag => new Tag { Name = tag, EncodedName = _options.Tags.TagEncodeFunc(tag) })
+            .ToDictionary(tag => tag.Name);
+
+
+        foreach(var post in _posts)
+        {
+            //add Tag objects to every post based on the front matter tags
+            post.Tags = ((IFrontMatterWithTags)post.FrontMatter).Tags
+                .Where(tagName => AllTags.ContainsKey(tagName))
+                .Select(tagName => AllTags[tagName])
+                .ToList();
+        }
+
+        if(!_options.Tags.AddTagPagesFromPosts) return;
+
+        foreach(var tag in AllTags.Values)
+        {
+            _blazorStaticService.AddPageToGenerate(new PageToGenerate($"{_options.Tags.TagsPageUrl}/{tag.EncodedName}",
+                Path.Combine(_options.Tags.TagsPageUrl, $"{tag.EncodedName}.html")));
+        }
+
+        _options.AfterContentParsedAndAddedAction?.Invoke(_blazorStaticService, this);
+
         return;
 
-        string[] GetPostsPath()
-        {
+
+        (string[] Posts, string AbsContentPath) GetPostsPath() {
             //retrieves post from bin folder, where the app is running
             EnumerationOptions enumerationOptions = new()
             {
@@ -84,20 +166,21 @@ public class BlazorStaticContentService<TFrontMatter>(
                 RecurseSubdirectories = true
             };
 
-            var execFolder =
-                Directory.GetParent((Assembly.GetEntryAssembly() ?? Assembly.GetCallingAssembly()).Location)!
-                    .FullName;//! is ok, null only in empty path or root
+            var execFolder = Directory
+                .GetParent((Assembly.GetEntryAssembly() ?? Assembly.GetCallingAssembly()).Location)
+                !.FullName;//! is ok, null only in empty path or rootrrr
 
-            absContentPath = Path.Combine(execFolder, options.ContentPath);
-            return Directory.GetFiles(absContentPath, options.PostFilePattern, enumerationOptions);
+            var contentPath = Path.Combine(execFolder, _options.ContentPath);
+            return (Directory.GetFiles(_options.ContentPath, _options.PostFilePattern, enumerationOptions), _options.ContentPath);
         }
 
         //ex: file= "C:\Users\user\source\repos\MyBlog\Content\Blog\en\somePost.md"
         //returns "en/somePost"
-        string GetRelativePathWithFilename(string file)
+        string GetRelativePathWithFilename(string file, string absoluteContentPath)
         {
-            var relativePathWithFileName = Path.GetRelativePath(absContentPath, file);
-            return Path.Combine(Path.GetDirectoryName(relativePathWithFileName)!, Path.GetFileNameWithoutExtension(relativePathWithFileName))
+            var relativePathWithFileName = Path.GetRelativePath(absoluteContentPath, file);
+            return Path.Combine(Path.GetDirectoryName(relativePathWithFileName)!,
+                    Path.GetFileNameWithoutExtension(relativePathWithFileName))
                 .Replace("\\", "/");
         }
     }
@@ -107,45 +190,5 @@ public class BlazorStaticContentService<TFrontMatter>(
     /// Each Tag is distinct, and every Post references a collection of these Tag objects.
     /// </summary>
     public Dictionary<string, Tag> AllTags { get; private set; } = [];
-
-
-    private void ProcessTags()
-    {
-        if(!typeof(IFrontMatterWithTags).IsAssignableFrom(typeof(TFrontMatter)))
-        {
-            if(options.Tags.AddTagPagesFromPosts)
-                logger.LogWarning("BlazorStaticContentOptions.Tags.AddTagPagesFromPosts is true, but the used FrontMatter does not inherit from IFrontMatterWithTags. No tags were processed.");
-            return;
-        }
-        //gather List<string> tags and create Tag objects from them.
-        AllTags = Posts
-            .SelectMany(post => (post.FrontMatter as IFrontMatterWithTags)?.Tags ?? Enumerable.Empty<string>())
-            .Distinct()
-            .Select(tag => new Tag { Name = tag, EncodedName = options.Tags.TagEncodeFunc(tag) })
-            .ToDictionary(tag => tag.Name);
-
-
-        foreach(var post in Posts)
-        {
-            //add Tag objects to every post based on the front matter tags
-            post.Tags = ((IFrontMatterWithTags)post.FrontMatter).Tags
-                .Where(tagName => AllTags.ContainsKey(tagName))
-                .Select(tagName => AllTags[tagName])
-                .ToList();
-        }
-
-        if(!options.Tags.AddTagPagesFromPosts) return;
-
-        if(options.Tags.TagsPageUrl is null)
-        {
-            logger.LogWarning("BlazorStaticContentService.Options.Tags.TagsPageUrl is null, but AddTagPagesFromPosts is true");
-            return;
-        }
-        foreach(var tag in AllTags.Values)
-        {
-            blazorStaticService.Options.PagesToGenerate.Add(new PageToGenerate($"{options.Tags.TagsPageUrl}/{tag.EncodedName}",
-            Path.Combine(options.Tags.TagsPageUrl, $"{tag.EncodedName}.html")));
-        }
-    }
 
 }

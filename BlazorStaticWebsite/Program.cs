@@ -26,7 +26,8 @@ builder.Services.AddBlazorStaticService(opt => {
         opt.ShouldGenerateSitemap = true;
         opt.SiteUrl = WebsiteKeys.SiteUrl;
         opt.HotReloadEnabled = true;
-    }).AddBlazorStaticContentService<BlogFrontMatter>()//
+    })
+    .AddBlazorStaticContentService<BlogFrontMatter>()//
     .AddBlazorStaticContentService<ProjectFrontMatter>(opt=> {
         opt.ContentPath = Path.Combine("Content", "Projects");
         opt.PageUrl = WebsiteKeys.ProjectsUrl;

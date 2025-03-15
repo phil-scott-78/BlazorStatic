@@ -39,12 +39,11 @@ public class BlazorStaticHelpers(BlazorStaticOptions options, ILogger<BlazorStat
     /// <param name="yamlDeserializer"></param>
     /// <typeparam name="T"></typeparam>
     /// <returns></returns>
-    public async Task<(string htmlContent, T frontMatter)>
-        ParseMarkdownFile<T>(string filePath, (string mediaPathToBeReplaced, string mediaPathNew)? mediaPaths = default,
-        IDeserializer? yamlDeserializer = default) where T : new()
+    public (string htmlContent, T frontMatter) ParseMarkdownFile<T>(string filePath, (string mediaPathToBeReplaced, string mediaPathNew)? mediaPaths = default,
+        IDeserializer? yamlDeserializer = null) where T : new()
     {
         yamlDeserializer ??= options.FrontMatterDeserializer;
-        var markdownContent = await File.ReadAllTextAsync(filePath);
+        var markdownContent = File.ReadAllText(filePath);
         var document = Markdown.Parse(markdownContent, options.MarkdownPipeline);
 
         var yamlBlock = document.Descendants<YamlFrontMatterBlock>().FirstOrDefault();

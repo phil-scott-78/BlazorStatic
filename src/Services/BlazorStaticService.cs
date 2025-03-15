@@ -1,3 +1,4 @@
+using System.Collections.Immutable;
 using Microsoft.Extensions.Logging;
 using System.Reflection;
 using System.Text;
@@ -17,6 +18,9 @@ public class BlazorStaticService(
     BlazorStaticHelpers helpers,
     ILogger<BlazorStaticService> logger)
 {
+    private ImmutableList<PageToGenerate> _pagesToGenerate =  ImmutableList<PageToGenerate>.Empty;
+    private ImmutableList<ContentToCopy> _contentToCopy =  ImmutableList<ContentToCopy>.Empty;
+
     /// <summary>
     ///     The BlazorStaticOptions used to configure the generation process.
     /// </summary>
@@ -64,7 +68,7 @@ public class BlazorStaticService(
         }
 
         var ignoredPathsWithOutputFolder = options.IgnoredPathsOnContentCopy.Select(x => Path.Combine(options.OutputFolderPath, x)).ToList();
-        foreach(var pathToCopy in options.ContentToCopyToOutput)
+        foreach(var pathToCopy in _contentToCopy)
         {
             logger.LogInformation("Copying {sourcePath} to {targetPath}", pathToCopy.SourcePath,
             Path.Combine(options.OutputFolderPath, pathToCopy.TargetPath));
@@ -75,7 +79,7 @@ public class BlazorStaticService(
 
         HttpClient client = new() { BaseAddress = new Uri(appUrl) };
 
-        foreach(var page in options.PagesToGenerate)
+        foreach(var page in _pagesToGenerate)
         {
             logger.LogInformation("Generating {pageUrl} into {pageOutputFile}", page.Url, page.OutputFile);
             string content;
@@ -121,7 +125,7 @@ public class BlazorStaticService(
         var xmlns = XNamespace.Get("http://www.sitemaps.org/schemas/sitemap/0.9");
         List<XElement> xmlUrlList = [];
 
-        foreach(var page in options.PagesToGenerate)
+        foreach(var page in _pagesToGenerate)
         {
             var pageUrl = Options.SiteUrl.TrimEnd('/') + EncodeUrl(page.Url);
             List<XElement> xElements = [new(xmlns + "loc", pageUrl)];
@@ -144,7 +148,7 @@ public class BlazorStaticService(
         var sitemapPath = Path.Combine(options.SitemapOutputFolderPath, sitemapFileName);
         await File.WriteAllTextAsync(sitemapPath, xDocument.Declaration + xDocument.ToString());
         logger.LogInformation("Sitemap generated into {pageOutputFile}", sitemapPath);
-        options.ContentToCopyToOutput.Add(new ContentToCopy(sitemapPath, sitemapFileName));//it is not copied with wwwroot as
+        AddContentToCopyToOutput(new ContentToCopy(sitemapPath, sitemapFileName));//it is not copied with wwwroot as
         return;
 
         static string EncodeUrl(string url)
@@ -165,7 +169,22 @@ public class BlazorStaticService(
 
         foreach(var route in routesToGenerate)
         {
-            options.PagesToGenerate.Add(new PageToGenerate(route, Path.Combine(route, options.IndexPageHtml)));
+            AddPageToGenerate(new PageToGenerate(route, Path.Combine(route, options.IndexPageHtml)));
         }
+    }
+
+    public void AddPageToGenerate(PageToGenerate pageToGenerate)
+    {
+        _pagesToGenerate = _pagesToGenerate.Add(pageToGenerate);
+    }
+
+    public void AddContentToCopyToOutput(ContentToCopy content)
+    {
+        _contentToCopy = _contentToCopy.Add(content);
+    }
+
+    public IEnumerable<ContentToCopy> GetContentToCopy()
+    {
+        return _contentToCopy;
     }
 }
